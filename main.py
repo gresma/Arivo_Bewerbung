@@ -1,6 +1,9 @@
 import PySimpleGUI as gui
-from datetime import datetime as dt
+import datetime
 import json
+
+
+error = "Error. No receipt matches the data you have entered."
 
 def is_valid_license_plate(license_plate: list[str]):
     #The license plates stored in the json file are all of format Bundesland:KeyWord:Number
@@ -10,7 +13,7 @@ def is_valid_license_plate(license_plate: list[str]):
         return False
     if (len(license_plate[0]) > 2 or not license_plate[0].isalpha()):
         return False
-    if not license_plate[1].isalpha():
+    if not license_plate[1].isalnum():
         return False
     if not license_plate[2].isnumeric():
         return False
@@ -21,7 +24,7 @@ def is_valid_date(date=''):
     format = "%d-%m-%Y"
     res = True
     try:
-        res = bool(dt.strptime(date, format))
+        res = bool(datetime.datetime.strptime(date, format))
     except ValueError:
         res = False
 
@@ -33,8 +36,7 @@ def is_valid_card(card=''):
     return True
 
 
-def search_reciept(values: list[any], data: list[any]):
-    return
+
 
 def gui_loop(window: gui.Window) -> list[any]:
 
@@ -104,7 +106,10 @@ def gui_loop(window: gui.Window) -> list[any]:
             retval.insert(0, 0)
             return retval
         else:
-            return license_plate, date, card
+            lp_final = ""
+            for str in license_plate:
+                lp_final += str
+            return lp_final, date, card
 
 def setupGUI() -> gui.Window:
     input_and_options = [[gui.Text("License Plate:"), gui.Push(), gui.InputText(size=5, key='license_plate:bl'),
@@ -119,22 +124,77 @@ def setupGUI() -> gui.Window:
                          [gui.Text(text="", key='date-format')],
                          [gui.Text(text="", key='card-format')], [gui.Text("")]]
 
-    search_results = [[gui.Button("Click me! I crash everything!")]]
+    search_results = [[gui.Text(text="", visible=True, key='receipt')]]
 
     layout = [[gui.Column(input_and_options), gui.VSeparator(), gui.Column(format_specifiers)],
                 [gui.HSeparator()],
-                [gui.Column(search_results)]
+                [gui.Column(search_results, key='receipt_column', scrollable=True, vertical_scroll_only=True,
+                            visible=False, size=(700, 850))]
                 ]
 
-    window = gui.Window("Arivo Reciept Search Engine", layout, size=(1000, 800))
+    window = gui.Window("Arivo Reciept Search Engine", layout, size=(700, 1000))
     return window
 
 
 def readData()-> list[any]:
     file = open("logs.json")
-    data = json.load(file)
-    print(data)
+    data = []
+    for jsonObj in file:
+            object = json.loads(jsonObj)
+            data.append(object)
     return data
+
+def reformatDateObject(dateobj):
+    dateobj_destructed = str(dateobj).split("-")
+    final_string = ""
+
+    for i in range(len(dateobj_destructed)):
+        final_string += dateobj_destructed[-(i + 1)]
+        if(i < len(dateobj_destructed)-1):
+            final_string += "."
+
+    return final_string
+
+def reformatCardNumber(cardnumber: str):
+    cardnumber = cardnumber.replace(" ", "")
+    cardnumber = cardnumber.replace("E", "")
+    cardnumber = cardnumber.replace("F", "")
+    return cardnumber
+
+def search_receipt(values: list[any], data: list[any]):
+    #License-Plat can be found in: payload.om_payload
+    #Date can be found in: payload.timestamp (in unix time)
+    #Card can be found in: payload.payment_payload.extra.card_number
+    for entry in data:
+        if entry[0] == "count":
+            continue
+        payload_dict = entry[1]
+        str = payload_dict["om_payload"]["id"]
+        p_license_plate = str.replace(" ", "")
+        #check if license plates match
+        if values[0].upper() != p_license_plate:
+            continue
+        #check if date matches
+        timestamp = payload_dict["timestamp"]
+        dateobj = datetime.date.fromtimestamp(timestamp)
+        date_string = reformatDateObject(dateobj)
+        print(date_string)
+        if values[1] != date_string:
+            continue
+        try:
+            card = payload_dict["payment_payload"]["extra"]["card_number"]
+        except KeyError:
+            continue
+        card_string = reformatCardNumber(card)
+        if values[2] != card_string:
+            continue
+        both_receipts = payload_dict["receipt"]
+        receipts = both_receipts.split("KUNDENBELEG")
+        receipt = "** KUNDENBELEG" #not a pretty solution but we dont want to display the vendors receipt just in case
+        receipt += receipts[1]
+        return receipt
+    return error
+
 
 
 def main():
@@ -149,7 +209,13 @@ def main():
         if(retval[0] == 0):
             continue
 
-        search_reciept(retval)
+        receipt = search_receipt(retval, data)
+        if receipt == error:
+            gui.popup_error(error)
+            continue
+        window['receipt'].update(value=receipt)
+        window['receipt_column'].update(visible=True)
+
 
 
 
