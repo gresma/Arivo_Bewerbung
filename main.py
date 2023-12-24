@@ -178,20 +178,24 @@ def search_receipt(values: list[any], data: list[any]):
         timestamp = payload_dict["timestamp"]
         dateobj = datetime.date.fromtimestamp(timestamp)
         date_string = reformatDateObject(dateobj)
-        print(date_string)
+
         if values[1] != date_string:
             continue
+        #not all payment messages have an extra
         try:
             card = payload_dict["payment_payload"]["extra"]["card_number"]
         except KeyError:
             continue
+        #check if card numbers match
         card_string = reformatCardNumber(card)
         if values[2] != card_string:
             continue
+
         both_receipts = payload_dict["receipt"]
         receipts = both_receipts.split("KUNDENBELEG")
         receipt = "** KUNDENBELEG" #not a pretty solution but we dont want to display the vendors receipt just in case
         receipt += receipts[1]
+
         return receipt
     return error
 
